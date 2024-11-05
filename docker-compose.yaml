@@ -1,5 +1,77 @@
-# Banco de dados
-# Fila (rabbitmq)
-# Cache (redis)
-# API
-# Worker
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: diploma_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db-postgres/ddl.sql:/docker-entrypoint-initdb.d/ddl.sql
+    ports:
+      - "5432:5432"
+
+  minio:
+    image: minio/minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./diplomas:/data
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq  # Volume para persistir as mensagens
+
+  mysql:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: sistema_diplomas
+      MYSQL_USER: user
+      MYSQL_PASSWORD: userpassword
+    volumes:
+      - mysqldata:/var/lib/mysql
+      - ./db-mysql/ddl.sql:/docker-entrypoint-initdb.d/ddl.sql  # Montar o script DDL no diretório correto
+    ports:
+      - "3306:3306"
+
+  diploma-generator:
+    build:
+      context: ./worker
+      dockerfile: ./Dockerfile
+    depends_on:
+      - postgres
+      - rabbitmq
+      - minio
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+
+  diploma-node:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    environment:
+      - DB_HOST=mysql
+      - DB_USER=user
+      - DB_PASSWORD=userpassword
+      - DB_DATABASE=sistema_diplomas
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - mysql
+      - rabbitmq
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+  mysqldata:
+  rabbitmq_data:
